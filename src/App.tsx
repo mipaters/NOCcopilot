@@ -538,23 +538,186 @@ function KpiPage() {
   );
 }
 
+interface LearningTopic {
+  simpleTitle: string;
+  simple: string;
+  technical: string;
+  tip: string;
+  visual: [string, string, string];
+  checks: string[];
+  walkthrough: string[];
+  example: string;
+  question: string;
+  answers: [string, string, string];
+  explanation: string;
+}
+
+const learningTopics: Record<string, LearningTopic> = {
+  "DOCSIS fundamentals": {
+    simpleTitle: "Think of DOCSIS as a shared digital roadway",
+    simple: "Cable modems share upstream and downstream channels to communicate with a CMTS or CCAP. The platform coordinates access so many homes can use the same physical network efficiently.",
+    technical: "DOCSIS service groups organize shared RF capacity. Scheduling, modulation profiles, FEC behaviour, SNR, channel occupancy, and modem distribution should be evaluated together.",
+    tip: "Connect every KPI to service impact, time of day, affected population, and a known-good baseline.",
+    visual: ["Cable modems", "Shared RF channels", "CMTS / CCAP"],
+    checks: ["Identify the service-group boundary", "Review upstream and downstream health", "Compare errors with the baseline", "Relate shared capacity to customer impact"],
+    walkthrough: ["Locate the affected service group", "Establish the normal baseline", "Review channel health", "Compare modem distribution", "Open the approved runbook", "Escalate with evidence"],
+    example: "Evening traffic grows across a shared service group. Utilization rises, but RF health remains stable, so capacity should be reviewed before assuming a plant fault.",
+    question: "What makes DOCSIS capacity a shared resource?",
+    answers: ["Multiple modems use common RF channels", "Every modem has a dedicated fibre", "Only the CMTS generates traffic"],
+    explanation: "Multiple cable modems are coordinated across shared upstream and downstream RF channels.",
+  },
+  "CMTS and CCAP fundamentals": {
+    simpleTitle: "The access platform coordinates neighbourhood connectivity",
+    simple: "A CMTS or CCAP connects cable modems to network services, manages registration, assigns channel resources, and provides a central view of service-group health.",
+    technical: "The platform combines control, forwarding, RF-service, redundancy, timing, and telemetry functions. Engineers correlate platform health with line-card, service-group, modem, and dependency state.",
+    tip: "Do not treat platform health as a single status; validate control plane, forwarding, redundancy, RF services, and customer registration separately.",
+    visual: ["Cable nodes", "CMTS / CCAP", "IP core"],
+    checks: ["Confirm control-plane health", "Validate redundancy state", "Review service-group registration", "Check upstream and downstream resources"],
+    walkthrough: ["Identify the platform role", "Map dependent service groups", "Check redundancy", "Review registration success", "Correlate alarms and KPIs", "Use the applicable MOP"],
+    example: "A platform reports healthy hardware while one service group has poor registration. The investigation should narrow to service-group and RF context rather than platform-wide recovery.",
+    question: "Which check best confirms service delivery beyond basic platform health?",
+    answers: ["Service-group registration success", "Chassis asset label", "Maintenance-window duration"],
+    explanation: "Registration success shows whether modems can establish service, not merely whether the chassis is online.",
+  },
+  "Upstream and downstream channels": {
+    simpleTitle: "Two directions, different engineering behaviours",
+    simple: "Downstream channels carry data toward customers; upstream channels carry data from customers. Upstream is often more sensitive to noise because many premises transmit into shared plant.",
+    technical: "Channel width, modulation, occupancy, power, SNR, profile selection, bonding, and error correction determine usable capacity and resilience in each direction.",
+    tip: "Always separate upstream and downstream evidence before deciding whether a symptom is platform, plant, profile, or capacity related.",
+    visual: ["Customer traffic", "Upstream ↔ downstream", "Access platform"],
+    checks: ["Identify affected direction", "Compare channel occupancy", "Review power and SNR", "Check bonding and profile state"],
+    walkthrough: ["Confirm symptom direction", "Select affected channels", "Compare against baseline", "Review bonding membership", "Inspect error behaviour", "Apply escalation criteria"],
+    example: "Upstream SNR declines while downstream indicators remain stable. This focuses investigation on return-path conditions rather than a broad platform failure.",
+    question: "Which direction is generally more exposed to combined ingress from customer premises?",
+    answers: ["Upstream", "Downstream only", "Neither direction"],
+    explanation: "Upstream combines transmissions from many premises and is commonly more exposed to ingress.",
+  },
+  "Signal-to-noise ratio": {
+    simpleTitle: "SNR describes how clearly the signal stands above noise",
+    simple: "A stronger signal-to-noise ratio generally gives the receiver more room to distinguish valid data from interference. A falling trend can reduce modulation resilience.",
+    technical: "SNR should be interpreted with modulation, profile, power, channel frequency, correctables, uncorrectables, time, and affected population. Thresholds vary by design.",
+    tip: "A single SNR sample is less useful than a time-correlated trend tied to errors and service impact.",
+    visual: ["Useful signal", "Signal vs noise", "Receiver quality"],
+    checks: ["Compare with baseline", "Correlate with error rates", "Review time-of-day pattern", "Check affected channel scope"],
+    walkthrough: ["Select a stable baseline", "Plot SNR over time", "Overlay error behaviour", "Identify channel concentration", "Review plant evidence", "Escalate if impact expands"],
+    example: "SNR drops by several synthetic units each evening while correctables rise. The recurring pattern supports an intermittent interference hypothesis.",
+    question: "What makes an SNR decline operationally meaningful?",
+    answers: ["Correlation with errors and impact", "The colour of the chart", "A single isolated sample"],
+    explanation: "SNR becomes useful evidence when its trend correlates with errors, scope, timing, and service impact.",
+  },
+  "Correctables and uncorrectables": {
+    simpleTitle: "Correctables show recovery; uncorrectables show lost information",
+    simple: "Forward error correction can repair some damaged data. Correctables count repaired errors, while uncorrectables indicate data that could not be recovered.",
+    technical: "Rates and trends matter more than raw counters. Normalize by traffic and time, then correlate with SNR, modulation, channel, modem distribution, latency, and customer impact.",
+    tip: "Rising correctables are an early signal, not automatic proof of customer impact or plant damage.",
+    visual: ["Damaged symbols", "Error correction", "Recovered / lost data"],
+    checks: ["Normalize error rates", "Separate correctable and uncorrectable trends", "Compare affected modems", "Correlate with RF evidence"],
+    walkthrough: ["Confirm counter interval", "Compare with traffic volume", "Find concentrated contributors", "Review SNR and profiles", "Check service impact", "Follow escalation thresholds"],
+    example: "Correctables rise but uncorrectables remain low and latency is stable. Investigate the degradation while avoiding an unsupported outage conclusion.",
+    question: "What do uncorrectables indicate?",
+    answers: ["Errors FEC could not recover", "Every repaired codeword", "Available capacity headroom"],
+    explanation: "Uncorrectables represent damaged information that error correction could not recover.",
+  },
+  "Fibre access basics": {
+    simpleTitle: "Fibre access shares optical capacity through passive distribution",
+    simple: "An OLT at the network side communicates with customer ONTs through optical splitters. Light levels, registration, split design, and shared capacity shape service health.",
+    technical: "PON engineering considers optical budgets, split ratios, wavelengths, ranging, DBA, OLT ports, ONT state, protection, and physical-path loss.",
+    tip: "Distinguish a single-ONT issue from a splitter branch, feeder, optics, or OLT-port issue using scope and optical evidence.",
+    visual: ["Customer ONTs", "Passive splitter", "OLT"],
+    checks: ["Determine affected ONT scope", "Review optical levels", "Check OLT-port registration", "Map splitter and feeder dependencies"],
+    walkthrough: ["Identify affected customers", "Map the PON topology", "Compare optical levels", "Review registration events", "Check shared components", "Escalate with path evidence"],
+    example: "Several ONTs on one splitter branch lose optical margin while peers on the same OLT port remain stable, focusing field inspection on the branch.",
+    question: "Which component passively divides the optical signal?",
+    answers: ["Optical splitter", "CMTS", "Edge router"],
+    explanation: "A passive optical splitter distributes the optical signal between the OLT and multiple ONTs.",
+  },
+  "IP routing fundamentals": {
+    simpleTitle: "Routers choose paths between network destinations",
+    simple: "Routers learn which networks are reachable, compare available paths, and forward packets toward the best next hop based on routing policy.",
+    technical: "Troubleshooting separates interface state, adjacency, route learning, best-path selection, forwarding installation, policy, convergence, and end-to-end reachability.",
+    tip: "A route in the control plane does not automatically prove that forwarding or the end-to-end service path is healthy.",
+    visual: ["Source network", "Routing decision", "Destination network"],
+    checks: ["Validate interface state", "Confirm routing adjacency", "Inspect selected path", "Test forwarding and return path"],
+    walkthrough: ["Define source and destination", "Inspect physical and logical state", "Confirm route learning", "Review policy", "Validate forwarding", "Check the reverse path"],
+    example: "A route is learned but traffic fails because a policy prevents forwarding installation. Control-plane visibility alone would miss the issue.",
+    question: "What must be checked after confirming a route is learned?",
+    answers: ["Forwarding installation and reachability", "Only the asset name", "The DOCSIS modulation profile"],
+    explanation: "Engineers must confirm the route is installed for forwarding and that the complete path works.",
+  },
+  "Software upgrade practices": {
+    simpleTitle: "A safe upgrade is a controlled comparison of before and after",
+    simple: "Engineers confirm prerequisites, capture a baseline, follow an approved procedure, validate service, and keep a clear rollback path.",
+    technical: "Upgrade readiness includes compatibility, redundancy, image integrity, storage, backup, monitoring, approvals, maintenance communication, release-specific validation, and rollback evidence.",
+    tip: "Treat release notes and technical guides as change inputs to the MOP, not as optional background reading.",
+    visual: ["Known baseline", "Controlled change", "Validated target"],
+    checks: ["Confirm compatibility and approvals", "Capture operational baseline", "Validate image and backup", "Prepare rollback triggers"],
+    walkthrough: ["Review release impact", "Validate prerequisites", "Capture baseline", "Perform controlled change", "Validate platform and service", "Close or roll back"],
+    example: "Release 7.5 adds a mandatory upstream-profile check. The existing MOP must be updated or supplemented before maintenance closure.",
+    question: "What should define a rollback decision?",
+    answers: ["Pre-agreed triggers and evidence", "Engineer intuition alone", "Elapsed time only"],
+    explanation: "Rollback conditions should be explicit, evidence-based, and agreed before the maintenance starts.",
+  },
+  "MOP structure": {
+    simpleTitle: "A MOP turns an approved change into a reviewable sequence",
+    simple: "A good Method of Procedure explains scope, prerequisites, roles, steps, validation, rollback, communication, and approval so engineers can execute consistently.",
+    technical: "MOP quality depends on version control, applicability, evidence requirements, stop conditions, decision authority, release-specific checks, dependencies, and auditable review.",
+    tip: "A step is incomplete if it says what to do but not what success looks like or when to stop.",
+    visual: ["Preconditions", "Controlled steps", "Validation & rollback"],
+    checks: ["Confirm scope and applicability", "Review prerequisites", "Check success and stop criteria", "Validate rollback completeness"],
+    walkthrough: ["Identify change objective", "Define authority and roles", "Document prerequisites", "Sequence safe actions", "Specify evidence", "Review and approve externally"],
+    example: "A MOP says 'validate services' but omits the new upstream-profile check. Comparing it with the current guide reveals a precise documentation gap.",
+    question: "Which element prevents an ambiguous maintenance close?",
+    answers: ["Explicit success and stop criteria", "A longer document title", "More screenshots alone"],
+    explanation: "Success and stop criteria tell engineers whether to proceed, pause, escalate, or roll back.",
+  },
+  "Troubleshooting methodology": {
+    simpleTitle: "Troubleshooting is structured evidence gathering",
+    simple: "Start with the symptom and scope, establish what changed, form hypotheses, test the safest discriminating checks, and update confidence as evidence arrives.",
+    technical: "A strong method separates observation from inference, prioritizes reversible tests, controls confirmation bias, preserves timelines, and defines escalation thresholds.",
+    tip: "Choose the next check for how well it distinguishes between hypotheses, not because it is familiar.",
+    visual: ["Observed symptom", "Evidence tests", "Supported cause"],
+    checks: ["Define symptom and scope", "Establish timeline and baseline", "Rank competing hypotheses", "Select discriminating checks"],
+    walkthrough: ["State the problem", "Collect known facts", "List plausible causes", "Choose a safe test", "Update confidence", "Resolve or escalate"],
+    example: "Rising correctables could reflect ingress, a connector, a profile, or monitoring. Comparing modem distribution and SNR helps distinguish them.",
+    question: "What is the best next diagnostic check?",
+    answers: ["One that separates competing hypotheses", "The longest available test", "The test used in every incident"],
+    explanation: "Useful checks reduce uncertainty by producing different expected outcomes for competing hypotheses.",
+  },
+  "Escalation practices": {
+    simpleTitle: "Escalation brings the right expertise in with usable evidence",
+    simple: "Escalate when impact, risk, uncertainty, authority, or time thresholds require help. A good escalation clearly states the symptom, scope, evidence, actions, and decision needed.",
+    technical: "Effective escalation packages include timeline, topology, customer or service impact, KPI evidence, hypotheses, completed checks, configuration-change context, artifacts, and explicit ownership.",
+    tip: "Escalation is not failure; vague escalation is. State exactly what expertise or decision is required.",
+    visual: ["NOC evidence", "Senior review", "Decision & ownership"],
+    checks: ["Confirm escalation threshold", "Summarize impact and scope", "Attach evidence and completed checks", "State the requested decision"],
+    walkthrough: ["Assess impact and risk", "Review runbook thresholds", "Prepare concise evidence", "Identify receiving role", "Transfer ownership clearly", "Record the outcome"],
+    example: "Uncorrectables begin rising across multiple service groups. The NOC escalates with timeline, affected assets, RF trends, completed checks, and the requested plant-engineering decision.",
+    question: "What makes an escalation actionable?",
+    answers: ["Evidence, scope, and a clear request", "A message saying only 'please investigate'", "Assigning it to every team"],
+    explanation: "The receiving engineer needs context, evidence, and a clear decision or action request.",
+  },
+};
+
 function LearningPage() {
-  const topics = ["DOCSIS fundamentals", "CMTS and CCAP fundamentals", "Upstream and downstream channels", "Signal-to-noise ratio", "Correctables and uncorrectables", "Fibre access basics", "IP routing fundamentals", "Software upgrade practices", "MOP structure", "Troubleshooting methodology", "Escalation practices"];
+  const topics = Object.keys(learningTopics);
   const modes = ["Explain Simply", "Technical Detail", "Walk Me Through It", "Test My Knowledge", "Show an Example"];
   const [topic, setTopic] = useState(topics[0]);
   const [mode, setMode] = useState(modes[0]);
+  const [search, setSearch] = useState("");
+  const lesson = learningTopics[topic];
+  const filteredTopics = topics.filter((item) => item.toLowerCase().includes(search.toLowerCase()));
   return (
     <Page title="Engineer Learning Centre" subtitle="Private, educational access to senior-level concepts without employee scoring." icon={GraduationCap}>
       <div className="learning-layout">
-        <Panel><SearchBox value="" onChange={() => undefined} placeholder="Search learning topics" /><div className="topic-list">{topics.map((t) => <button className={topic === t ? "selected" : ""} onClick={() => setTopic(t)} key={t}><BookOpen size={16} />{t}</button>)}</div></Panel>
+        <Panel><SearchBox value={search} onChange={setSearch} placeholder="Search learning topics" /><div className="topic-list">{filteredTopics.map((t) => <button className={topic === t ? "selected" : ""} onClick={() => setTopic(t)} key={t}><BookOpen size={16} />{t}</button>)}</div></Panel>
         <Panel className="lesson">
           <div className="lesson-head"><div><div className="eyebrow">Network learning path</div><h2>{topic}</h2></div><Badge tone="green">Private learning</Badge></div>
           <Tabs tabs={modes} active={mode} onChange={setMode} />
-          {mode === "Explain Simply" && <><h3>Think of DOCSIS as a shared digital roadway</h3><p>Cable modems share upstream and downstream channels to communicate with a CMTS or CCAP. The platform coordinates access so many homes can use the same physical network efficiently.</p><ConceptVisual /><Callout tone="info" title="Senior engineer tip">Always connect a KPI to service impact, time of day, affected population, and a known-good baseline before drawing a conclusion.</Callout></>}
-          {mode === "Technical Detail" && <><h3>Engineering view</h3><p>DOCSIS service groups organize shared RF capacity. Upstream scheduling, modulation profiles, FEC behaviour, SNR, channel occupancy, and modem distribution should be evaluated together when troubleshooting.</p><Checklist items={["Establish topology and service-group scope", "Compare correctables with uncorrectables", "Review SNR and occupancy", "Separate plant symptoms from profile or monitoring issues"]} /></>}
-          {mode === "Walk Me Through It" && <Timeline items={["Identify the affected service group", "Establish a baseline", "Correlate signal and error KPIs", "Compare impacted modem distribution", "Use the approved runbook", "Escalate with evidence"]} />}
-          {mode === "Test My Knowledge" && <KnowledgeCheck />}
-          {mode === "Show an Example" && <Callout tone="success" title="Synthetic example">Evening correctables rise while SNR falls, but uncorrectables remain low. This supports investigation of intermittent ingress before concluding there is broad customer impact.</Callout>}
+          {mode === "Explain Simply" && <><h3>{lesson.simpleTitle}</h3><p>{lesson.simple}</p><ConceptVisual labels={lesson.visual} /><Callout tone="info" title="Senior engineer tip">{lesson.tip}</Callout></>}
+          {mode === "Technical Detail" && <><h3>Engineering view</h3><p>{lesson.technical}</p><Checklist items={lesson.checks} /></>}
+          {mode === "Walk Me Through It" && <Timeline items={lesson.walkthrough} />}
+          {mode === "Test My Knowledge" && <KnowledgeCheck key={topic} topic={lesson} />}
+          {mode === "Show an Example" && <Callout tone="success" title="Synthetic example">{lesson.example}</Callout>}
         </Panel>
       </div>
     </Page>
@@ -725,8 +888,8 @@ function Progress({ label, value }: { label: string; value: number }) { return <
 function TagList({ items }: { items: string[] }) { return <div className="tag-list">{items.map((item) => <span key={item}>{item}</span>)}</div>; }
 function Confidence({ value }: { value: number }) { return <div className="confidence"><CircleGauge /><div><b>{value}%</b><small>Confidence</small></div></div>; }
 function ActivityList() { return <div className="activity-list">{[["MOP-CMTS-042","Validation gap detected","8 min ago"],["TSG-NX9000-7.5","New guide indexed","2 hours ago"],["RB-DOCSIS-014","Reviewed by Access Reliability","Yesterday"],["STD-DOCSIS-019","Configuration comparison saved","Yesterday"]].map(([id,event,time]) => <div key={id}><span className="status-dot" /><div><b>{event}</b><small>{id}</small></div><time>{time}</time></div>)}</div>; }
-function ConceptVisual() { return <div className="concept-visual"><div className="home-node">Homes</div><div className="channel-lines"><i/><i/><i/></div><div className="hub-node"><Network /> CMTS / CCAP</div><div className="channel-lines"><i/><i/></div><div className="cloud-node">Network services</div></div>; }
-function KnowledgeCheck() { const [selected, setSelected] = useState(""); return <div className="knowledge-check"><h3>Which evidence best supports an ingress-noise hypothesis?</h3>{["Rising evening correctables with declining SNR","A healthy redundancy state","Stable utilization with no RF change"].map((a, i) => <button className={selected === a ? (i === 0 ? "correct" : "incorrect") : ""} onClick={() => setSelected(a)} key={a}>{a}{selected === a && (i === 0 ? <Check /> : <X />)}</button>)}{selected && <p>{selected.startsWith("Rising") ? "Correct. Correlated timing and RF degradation provide useful evidence." : "Not the strongest evidence. Look for correlated RF and error behaviour."}</p>}</div>; }
+function ConceptVisual({ labels }: { labels: [string, string, string] }) { return <div className="concept-visual"><div className="home-node">{labels[0]}</div><div className="channel-lines"><i/><i/><i/></div><div className="hub-node"><Network /> {labels[1]}</div><div className="channel-lines"><i/><i/></div><div className="cloud-node">{labels[2]}</div></div>; }
+function KnowledgeCheck({ topic }: { topic: LearningTopic }) { const [selected, setSelected] = useState(""); return <div className="knowledge-check"><h3>{topic.question}</h3>{topic.answers.map((answer, i) => <button className={selected === answer ? (i === 0 ? "correct" : "incorrect") : ""} onClick={() => setSelected(answer)} key={answer}>{answer}{selected === answer && (i === 0 ? <Check /> : <X />)}</button>)}{selected && <p>{selected === topic.answers[0] ? `Correct. ${topic.explanation}` : `Not quite. ${topic.explanation}`}</p>}</div>; }
 function AgentTeam() { return <><SectionTitle eyebrow="Six understandable agents" title="Specialists coordinated by a supervisor" /><div className="agent-grid">{agents.map(([name, task, output, confidence]) => <Panel key={name}><div className="agent-head"><span><Bot /></span><Badge tone="green">Ready</Badge></div><h3>{name}</h3><p>{task}</p><div className="agent-meta"><DataPoint label="Output" value={output} /><DataPoint label="Confidence" value={confidence} /></div></Panel>)}</div></>; }
 
 export default App;
